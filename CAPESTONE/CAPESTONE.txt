@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScript Expression Tree</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 1px solid black;
+        }
+        #controls {
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <input type="text" id="expressionInput" placeholder="Enter expression">
+        <button onclick="generateTree()">Generate Tree</button>
+    </div>
+    <canvas id="treeCanvas" width="1000" height="700"></canvas>
+    <script>
+        function isBracketed(expr) {
+            var stack = [];
+            for (var i = 0; i < expr.length; i++) {
+                if ('(' === expr[i]) {
+                    stack.push('(');
+                } else if (')' === expr[i]) {
+                    stack.pop();
+                    if (stack.length === 0) {
+                        if (i !== expr.length - 1) {
+                            return false;
+                        } else {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function isValidExpression(expr) {
+            if (expr.length < 3) {
+                return false;
+            }
+            for (var i = 0; i < expr.length; i++) {
+                if ('0123456789abcdefghijklmnopqrstuvwxyz*()/+-'.indexOf(expr[i]) === -1) {
+                    return false;
+                }
+            }
+            try {
+                while ("(" === expr[0] && ")" === expr[expr.length - 1]) {
+                    if (isBracketed(expr)) {
+                        expr = expr.substring(1, expr.length - 1);
+                    } else break;
+                }
+                return true;
+            } catch (ex) {
+                return false;
+            }
+        }
+
+        function infixToPostfix(expression) {
+            if (!isValidExpression(expression)) {
+                return null;
+            }
+            const prec = { "*": 3, "/": 3, "-": 2, "+": 2, "(": 1 };
+            let op_stack = [];
+            let postfixList = [];
+            let tokens = expression.split('');
+            for (const token of tokens) {
+                if ('0123456789abcdefghijklmnopqrstuvwxyz'.indexOf(token) !== -1) {
+                    postfixList.push(token);
+                } else if ("(" === token) {
+                    op_stack.push(token);
+                } else if (")" === token) {
+                    let top_op_token = op_stack.pop();
+                    while (top_op_token !== '(') {
+                        postfixList.push(top_op_token);
+                        top_op_token = op_stack.pop();
+                    }
+                } else {
+                    let peek_elem = op_stack.slice(-1)[0];
+                    while (op_stack.length > 0 && (prec[peek_elem] >= prec[token])) {
+                        postfixList.push(op_stack.pop());
+                        peek_elem = op_stack.slice(-1)[0];
+                    }
+                    op_stack.push(token);
+                }
+            }
+            while (op_stack.length > 0) {
+                postfixList.push(op_stack.pop());
+            }
+            return postfixList;
+        }
+
+        function Node(value) {
+            const radius = 32.5;
+            this.value = value;
+            this.x = null;
+            this.y = null;
+            this.right = null;
+            this.left = null;
+
+            this.isLeaf = () => this.right == null && this.left == null;
+
+            this.drawEdge = function (context, x, y, left_way, resolve) {
+                context.strokeStyle = 'gray';
+                context.beginPath();
+                const x_y_ratio = Math.abs(this.y - y) / Math.abs(this.x - x);
+                const w = radius * Math.sqrt(1 / (1 + Math.pow(x_y_ratio, 2)));
+                const d = x_y_ratio * w;
+                if (left_way) {
+                    drawEdgeAnimated(this.x - w, this.y + d, x + w, y - d, context, resolve);
+                } else {
+                    drawEdgeAnimated(this.x + w, this.y + d, x - w, y - d, context, resolve);
+                }
+            };
+
+            this.draw = function (context) {
+                context.beginPath();
+                context.arc(this.x, this.y, radius, 0, Math.PI * 2, false);
+                context.fillStyle = 'white';
+                context.fill();
+                context.strokeStyle = '#212121';
+                context.stroke();
+                context.font = '25px Times New Roman';
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+                context.fillStyle = "#212121";
+                context.fillText(this.value, this.x, this.y);
+            };
+        }
+
+        function drawEdgeAnimated(origin_x, origin_y, destine_x, destine_y, ctx, resolve) {
+            const vertices = [{ x: origin_x, y: origin_y }, { x: destine_x, y: destine_y }];
+            const N = 35;
+            var waypoints = [];
+            for (var i = 1; i < vertices.length; i++) {
+                var pt0 = vertices[i - 1];
+                var pt1 = vertices[i];
+                var dx = pt1.x - pt0.x;
+                var dy = pt1.y - pt0.y;
+                for (var j = 0; j <= N; j++) {
+                    var x = pt0.x + dx * j / N;
+                    var y = pt0.y + dy * j / N;
+                    waypoints.push({ x: x, y: y });
+                }
+            }
+            var t = 1;
+            function resolveCallback(callback) {
+                function animate() {
+                    if (t < waypoints.length - 1) { requestAnimationFrame(animate); }
+                    else { callback(); }
+                    ctx.beginPath();
+                    ctx.moveTo(waypoints[t - 1].x, waypoints[t - 1].y);
+                    ctx.lineTo(waypoints[t].x, waypoints[t].y);
+                    ctx.stroke();
+                    t++;
+                }
+                return animate;
+            }
+            requestAnimationFrame(resolveCallback(resolve));
+        }
+
+        function constructTree(postfix) {
+            const OPERATORS = ['*', '/', '-', '+'];
+            var stack = [];
+            var root = null;
+            var current;
+            var shift = false;
+            for (var i = postfix.length - 1; i >= 0; i--) {
+                if (null === root) {
+                    current = new Node(postfix[i]);
+                    root = current;
+                } else {
+                    if (shift) {
+                        current.left = new Node(postfix[i]);
+                        current = current.left;
+                        shift = false;
+                    } else {
+                        current.right = new Node(postfix[i]);
+                        current = current.right;
+                    }
+                }
+                if (OPERATORS.includes(postfix[i])) {
+                    stack.push(current);
+                } else {
+                    current = stack.pop();
+                    shift = true;
+                }
+            }
+            return root;
+        }
+
+        function getSize(root) {
+            var size = 0;
+            function countSize(root) {
+                if (null != root) {
+                    size++;
+                    countSize(root.left);
+                    countSize(root.right);
+                }
+            }
+            countSize(root);
+            return size;
+        }
+
+        function print_coords(root) {
+            if (null != root) {
+                print_coords(root.left);
+                console.log(root.value, root.x, root.y);
+                print_coords(root.right);
+            }
+        }
+
+        function setCoordinates(root) {
+            var i = 0;
+            const OFFSET = 50;
+            const size = getSize(root);
+            const canvas_mid_point = window.innerWidth / 2;
+            function setCoordinates(subt, depth) {
+                if (null != subt) {
+                    setCoordinates(subt.left, depth + 1);
+                    subt.x = canvas_mid_point + (OFFSET * (i - size / 2));
+                    subt.y = 1.75 * OFFSET + (depth * 1.5 * OFFSET);
+                    i++;
+                    setCoordinates(subt.right, depth + 1);
+                }
+            }
+            setCoordinates(root, 0);
+        }
+
+        async function drawTree(root, context) {
+            if (null != root) {
+                root.draw(context);
+                if (null != root.left) {
+                    await new Promise(resolve => root.drawEdge(context, root.left.x, root.left.y, true, resolve));
+                }
+                drawTree(root.left, context);
+                if (null != root.right) {
+                    await new Promise(resolve => root.drawEdge(context, root.right.x, root.right.y, false, resolve));
+                }
+                drawTree(root.right, context);
+            }
+        }
+
+        function generateTree() {
+            const canvas = document.getElementById('treeCanvas');
+            const context = canvas.getContext('2d');
+            context.clearRect(0, 0, canvas.width, canvas.height);
+            const expression = document.getElementById('expressionInput').value;
+            const postfix = infixToPostfix(expression);
+            if (postfix) {
+                const root = constructTree(postfix);
+                setCoordinates(root);
+                drawTree(root, context);
+            } else {
+                alert("Invalid expression");
+            }
+        }
+    </script>
+</body>
+</html>
